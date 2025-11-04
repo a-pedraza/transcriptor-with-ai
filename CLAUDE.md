@@ -108,6 +108,53 @@ response = transcribe_chunk(client, chunk, speaker_references=speaker_references
 
 Use `analyze_speakers.py` to analyze speaker distribution after transcription.
 
+## Video-Based Speaker Identification
+
+NEW system to identify speaker names using video analysis with GPT-4 Vision.
+
+### Workflow
+
+1. **Create Name Mapping** (run once per video):
+```bash
+python create_name_mapping.py
+```
+- Takes 5 screenshots: 3 at start (10s, 30s, 60s) + 2 at end
+- Extracts ALL participants with full names and initials
+- Creates `name_mapping.json` with mappings like `{"KB": "Kate Balliet"}`
+
+2. **Identify Speakers**:
+```bash
+python identify_speakers_with_mapping.py
+```
+- For each speaker in transcription, captures video when they speak
+- Uses GPT-4 Vision to detect visual indicators (highlighted avatar borders)
+- Resolves initials to full names using mapping
+- Detects multiple simultaneous speakers and retries automatically
+- Saves results to `speaker_identifications.json`
+
+3. **Generate Verification Report**:
+```bash
+python create_verification_report.py
+```
+- Creates HTML/text reports with screenshots and timestamps
+- Allows manual verification of identifications
+
+### Key Features
+
+- **Visual Indicator Detection**: Looks for highlighted borders around avatars
+- **Multi-Speaker Detection**: Counts people with borders, marks low confidence if 2+
+- **Automatic Retry**: Up to 3 attempts per speaker, skips multi-speaker moments
+- **Smart Segment Selection**: Prioritizes long segments (20-30s) where person speaks continuously
+- **Clear Timestamps**: Reports show MM:SS format for easy video verification
+
+### Important Notes
+
+- Ignores screen sharing content completely
+- Focuses only on participant avatars (usually right side of screen)
+- Detects both bright and subtle borders
+- Reports explicit count of people detected
+- GPT-4 Vision with Pydantic structured outputs ensures consistent format
+
 ## Protected Files
 
 These files contain sensitive data and are excluded via `.gitignore`:
