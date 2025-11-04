@@ -7,14 +7,23 @@ audio.mp3
 
 # Archivos temporales de audio
 temp_chunk_*.mp3
+temp_speaker_*_ref.mp3
+test_chunk_*.mp3
+test_*.mp3
+speaker_*_reference.mp3
 
 # Salida de transcripción
 transcription_output.txt
 test_output.txt
+test_with_references_output.txt
+*_output.txt
 
 # Scripts de prueba/debugging
-test_quick.py
+test_*.py
 UPLOAD_PLAN.md
+analyze_speaker_time.py
+extract_speaker_clips.py
+create_test_chunk.py
 
 # Python
 __pycache__/

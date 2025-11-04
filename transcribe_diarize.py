@@ -12,6 +12,11 @@ from openai import OpenAI
 from pydub import AudioSegment
 from pydub.utils import mediainfo
 from dotenv import load_dotenv
+from speaker_reference_utils import (
+    create_speaker_references,
+    encode_references_for_api,
+    cleanup_reference_files
+)
 
 
 # Límite de OpenAI: 1400 segundos. Usamos 1200 (20 minutos) para tener margen
@@ -99,7 +104,7 @@ def split_audio(audio_file_path, chunk_duration=MAX_CHUNK_DURATION):
     return chunks
 
 
-def transcribe_chunk(client, audio_file_path, chunk_index=0, time_offset=0):
+def transcribe_chunk(client, audio_file_path, chunk_index=0, time_offset=0, speaker_references=None):
     """
     Transcribe un chunk de audio con identificación de hablantes
 
@@ -108,22 +113,33 @@ def transcribe_chunk(client, audio_file_path, chunk_index=0, time_offset=0):
         audio_file_path: Ruta al archivo de audio
         chunk_index: Índice del chunk (para logging)
         time_offset: Offset de tiempo en segundos para ajustar timestamps
+        speaker_references: Diccionario opcional con referencias de speakers (de encode_references_for_api)
 
     Returns:
         dict: Resultado de la transcripción con diarización
     """
     print(f"\nTranscribiendo chunk {chunk_index + 1}: {audio_file_path}")
+    if speaker_references:
+        num_refs = len(speaker_references.get('known_speaker_names', []))
+        print(f"  Usando {num_refs} referencias de speakers")
     print("-" * 50)
 
     # Abrir el archivo de audio
     with open(audio_file_path, "rb") as audio_file:
+        # Preparar parámetros base
+        params = {
+            "model": "gpt-4o-transcribe-diarize",
+            "file": audio_file,
+            "response_format": "diarized_json",
+            "chunking_strategy": "auto"
+        }
+
+        # Agregar referencias si están disponibles
+        if speaker_references:
+            params["extra_body"] = speaker_references
+
         # Realizar la transcripción con diarización
-        response = client.audio.transcriptions.create(
-            model="gpt-4o-transcribe-diarize",
-            file=audio_file,
-            response_format="diarized_json",  # Formato específico para diarización
-            chunking_strategy="auto"  # Estrategia de chunking (debe ser string, no dict)
-        )
+        response = client.audio.transcriptions.create(**params)
 
     # Nota: Los timestamps no se ajustan aquí porque los objetos Pydantic son inmutables
     # El offset se manejará al combinar las transcripciones
@@ -338,17 +354,42 @@ def main():
         # Transcribir cada chunk
         transcriptions = []
         offsets = []
+        speaker_references = None
+        reference_files = []
+
         for i, chunk in enumerate(chunks):
             chunk_start = time.time()
             time_offset = i * MAX_CHUNK_DURATION
             offsets.append(time_offset)
-            response = transcribe_chunk(client, chunk, i, time_offset)
+
+            # Transcribir chunk
+            response = transcribe_chunk(client, chunk, i, time_offset, speaker_references)
             transcriptions.append(response)
+
+            # Si es el primer chunk Y hay múltiples chunks, crear referencias
+            if i == 0 and len(chunks) > 1:
+                print("\n  Analizando primer chunk para crear referencias de speakers...")
+                speaker_names, ref_files = create_speaker_references(
+                    audio_file,
+                    response,
+                    chunk_offset=time_offset,
+                    max_speakers=4
+                )
+
+                if speaker_names and ref_files:
+                    reference_files = ref_files
+                    speaker_references = encode_references_for_api(speaker_names, ref_files)
+                    print(f"  Referencias creadas para: {speaker_names}")
+                    print("  Los siguientes chunks usaran estas referencias...\n")
+                else:
+                    print("  No se pudieron crear referencias (ningun speaker tiene segmentos 2-10s)")
+                    print("  Continuando sin referencias...\n")
+
             chunk_duration = time.time() - chunk_start
-            print(f"Chunk {i+1}/{len(chunks)} completado ✓ ({chunk_duration:.2f}s)")
+            print(f"Chunk {i+1}/{len(chunks)} completado OK ({chunk_duration:.2f}s)")
 
         transcribe_duration = time.time() - transcribe_start
-        print(f"   ⏱ Tiempo total de transcripción: {transcribe_duration:.2f}s")
+        print(f"   Tiempo total de transcripcion: {transcribe_duration:.2f}s")
 
         # Combinar resultados si hay múltiples chunks
         if len(chunks) > 1:
@@ -373,6 +414,10 @@ def main():
             print("\nPaso 5: Limpiando archivos temporales...")
             cleanup_temp_files(chunks, audio_file)
 
+            # Limpiar referencias de speakers si se crearon
+            if reference_files:
+                cleanup_reference_files(reference_files)
+
         script_duration = time.time() - script_start
         print(f"\n{'='*70}")
         print(f"¡Transcripción completada exitosamente!")
@@ -390,6 +435,10 @@ def main():
         # Limpiar archivos temporales en caso de error
         if 'chunks' in locals():
             cleanup_temp_files(chunks, audio_file)
+
+        # Limpiar referencias si existen
+        if 'reference_files' in locals() and reference_files:
+            cleanup_reference_files(reference_files)
 
 
 if __name__ == "__main__":
