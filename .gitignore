@@ -25,6 +25,24 @@ analyze_speaker_time.py
 extract_speaker_clips.py
 create_test_chunk.py
 
+# Videos (archivos grandes)
+*.mp4
+*.avi
+*.mov
+
+# Resultados y reportes (regenerables)
+*_identification*.json
+speaker_identifications.json
+verification_report*.html
+verification_report*.txt
+name_mapping.json
+
+# Screenshots y mapeo (regenerables)
+identification_screenshots/
+mapping_screenshots/
+*.jpg
+*.png
+
 # Python
 __pycache__/
 *.py[cod]
